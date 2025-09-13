@@ -118,7 +118,7 @@ def chatbot_response(input_text):
     
     prompt = f"Berikan jawaban singkat dan informatif tentang presentasi terkait: {input_text}. Fokus pada tips, struktur, atau pengelolaan kecemasan."
     try:
-        response = genai.GenerativeModel('gemini-pro').generate_content(prompt)
+        response = genai.GenerativeModel('gemini-1.5-flash').generate_content(prompt)
         return response.text
     except Exception as e:
         return f"Error: {str(e)}. Coba lagi nanti."
