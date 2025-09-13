@@ -5,6 +5,7 @@ import whisper
 import tempfile
 import os
 import google.generativeai as genai
+import time
 
 # ===============================
 # Konfigurasi API Gemini
@@ -13,19 +14,28 @@ import google.generativeai as genai
 API_KEY = "AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"
 genai.configure(api_key=API_KEY)
 
-# Inisialisasi Whisper model (ringan: "tiny" untuk kecepatan)
-@st.cache_resource
+# Preload model Whisper multibahasa (tiny untuk Indonesia)
+@st.cache_resource(ttl=3600)  # Cache selama 1 jam
 def load_whisper_model():
-    return whisper.load_model("tiny")
+    st.write("Memuat model Whisper multibahasa... (ini hanya sekali di awal)")
+    start_time = time.time()
+    model = whisper.load_model("tiny")  # Kembali ke tiny untuk multibahasa
+    st.write(f"Model dimuat dalam {time.time() - start_time:.2f} detik.")
+    return model
 
 whisper_model = load_whisper_model()
 
-# Fungsi analisis video
+# Cache hasil analisis untuk video yang sama
+@st.cache_data
+def analyze_video_cached(video_file):
+    return analyze_video(video_file)
+
+# Fungsi analisis video (dioptimalkan untuk Indonesia)
 def analyze_video(video_file):
     try:
-        tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-        tfile.write(video_file.read())
-        tfile_path = tfile.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tfile:
+            tfile.write(video_file.read())
+            tfile_path = tfile.name
         
         cap = cv2.VideoCapture(tfile_path)
         if not cap.isOpened():
@@ -34,7 +44,7 @@ def analyze_video(video_file):
         eye_contact_score = 0
         posture_score = 0
         frame_count = 0
-        max_duration = 180  # Batas 3 menit
+        max_duration = 180
         
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
         if face_cascade.empty():
@@ -42,7 +52,7 @@ def analyze_video(video_file):
 
         while cap.isOpened():
             ret, frame = cap.read()
-            if not ret or frame_count % 10 != 0:  # Sampling 10 frame
+            if not ret or frame_count % 20 != 0:  # Tingkatkan sampling ke 20 frame
                 frame_count += 1
                 continue
             if cap.get(cv2.CAP_PROP_POS_MSEC) / 1000 > max_duration:
@@ -52,7 +62,7 @@ def analyze_video(video_file):
                 break
             
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+            faces = face_cascade.detectMultiScale(gray, 1.1, 3)  # Kurangi deteksi sensitivitas
             if len(faces) > 0:
                 eye_contact_score += 1
             
@@ -62,17 +72,17 @@ def analyze_video(video_file):
             frame_count += 1
         
         cap.release()
-        total_frames = frame_count // 10 if frame_count > 0 else 1
+        total_frames = frame_count // 20 if frame_count > 0 else 1
         eye_contact_score = (eye_contact_score / total_frames) * 100 if total_frames > 0 else 0
         posture_score = (posture_score / total_frames) * 100 if total_frames > 0 else 0
 
-        # Analisis Audio
-        result = whisper_model.transcribe(tfile_path)
+        # Analisis audio dengan fokus Indonesia
+        result = whisper_model.transcribe(tfile_path, language="id")  # Eksplisit bahasa Indonesia
         full_text = result["text"].lower()
         words = full_text.split()
         duration = result["segments"][-1]["end"] if result["segments"] else 1
         wpm = len(words) / duration * 60 if duration > 0 else 0
-        filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0}
+        filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0, "ya": 0, "lah": 0}  # Tambah filler lokal
         for word in words:
             if word in filler_words:
                 filler_words[word] += 1
@@ -91,16 +101,16 @@ def analyze_video(video_file):
 # Fungsi analisis audio
 def analyze_audio(audio_file):
     try:
-        tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        tfile.write(audio_file.read())
-        tfile_path = tfile.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tfile:
+            tfile.write(audio_file.read())
+            tfile_path = tfile.name
         
-        result = whisper_model.transcribe(tfile_path)
+        result = whisper_model.transcribe(tfile_path, language="id")
         full_text = result["text"].lower()
         words = full_text.split()
         duration = result["segments"][-1]["end"] if result["segments"] else 1
         wpm = len(words) / duration * 60 if duration > 0 else 0
-        filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0}
+        filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0, "ya": 0, "lah": 0}
         for word in words:
             if word in filler_words:
                 filler_words[word] += 1
@@ -116,16 +126,17 @@ def chatbot_response(input_text):
     if not input_text or not any(keyword in input_text.lower() for keyword in ["presentasi", "tips", "struktur", "kecemasan", "bicara", "pengantar"]):
         return "Maaf, chatbot hanya mendukung diskusi seputar presentasi. Coba tanyakan tips presentasi, struktur, atau cara mengatasi kecemasan."
     
-    prompt = f"Berikan jawaban singkat dan informatif tentang presentasi terkait: {input_text}. Fokus pada tips, struktur, atau pengelolaan kecemasan."
+    prompt = f"Berikan jawaban singkat dan informatif tentang presentasi dalam konteks Indonesia terkait: {input_text}. Fokus pada tips, struktur, atau pengelolaan kecemasan, gunakan bahasa yang relevan untuk presenter lokal."
     try:
-        response = genai.GenerativeModel('gemini-1.5-flash').generate_content(prompt)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         return f"Error: {str(e)}. Coba lagi nanti."
 
 # UI dengan tiga section
 st.title("BICARA - Bimbingan Cerdas Retorika Anda")
-st.write("Asisten Virtual Berbasis AI untuk Melatih Keterampilan Presentasi")
+st.write("Asisten Virtual Berbasis AI untuk Masyarakat Indonesia dalam Melatih Keterampilan Presentasi")
 
 # Section 1: Chatbot
 st.header("1. Diskusi dengan Chatbot")
@@ -150,10 +161,10 @@ if audio_file:
                 st.subheader("Rekomendasi Praktis")
                 recommendations = []
                 if result['wpm'] > 150:
-                    recommendations.append("Coba kurangi kecepatan bicara untuk kejelasan.")
+                    recommendations.append("Coba kurangi kecepatan bicara agar lebih jelas.")
                 if max(result['filler_words'].values()) > 0:
                     most_filler = max(result['filler_words'], key=result['filler_words'].get)
-                    recommendations.append(f"Kurangi penggunaan kata '{most_filler}' untuk tampil lebih percaya diri.")
+                    recommendations.append(f"Kurangi penggunaan kata '{most_filler}' untuk kesan profesional.")
                 st.write("- " + "\n- ".join(recommendations) if recommendations else "Presentasi audio Anda sudah sangat baik!")
 
 # Section 3: Upload Video
@@ -163,7 +174,7 @@ if video_file:
     st.video(video_file)
     if st.button("Analisis Video"):
         with st.spinner("Menganalisis video, mohon tunggu..."):
-            result = analyze_video(video_file)
+            result = analyze_video_cached(video_file)
             if result:
                 st.success("Analisis video selesai!")
                 st.subheader("Hasil Analisis Video")
@@ -178,12 +189,12 @@ if video_file:
                 st.subheader("Rekomendasi Praktis")
                 recommendations = []
                 if result['wpm'] > 150:
-                    recommendations.append("Coba kurangi kecepatan bicara untuk kejelasan.")
+                    recommendations.append("Coba kurangi kecepatan bicara agar lebih jelas.")
                 if max(result['filler_words'].values()) > 0:
                     most_filler = max(result['filler_words'], key=result['filler_words'].get)
-                    recommendations.append(f"Kurangi penggunaan kata '{most_filler}' untuk tampil lebih percaya diri.")
+                    recommendations.append(f"Kurangi penggunaan kata '{most_filler}' untuk kesan profesional.")
                 if result['eye_contact_score'] < 50:
-                    recommendations.append("Pertahankan kontak mata lebih lama ke audiens.")
+                    recommendations.append("Pertahankan kontak mata lebih lama untuk terhubung dengan audiens.")
                 st.write("- " + "\n- ".join(recommendations) if recommendations else "Presentasi video Anda sudah sangat baik!")
 
-st.markdown("**Catatan:** Pastikan file memiliki pencahayaan cukup (untuk video), resolusi minimal 720p, dan durasi maksimal 3 menit untuk hasil optimal.")
+st.markdown("**Catatan:** Pastikan video memiliki pencahayaan cukup, resolusi minimal 720p, dan durasi maksimal 3 menit untuk hasil optimal.")
