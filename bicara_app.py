@@ -18,7 +18,7 @@ pose = mp_pose.Pose(min_detection_confidence=0.5, static_image_mode=False)
 # Inisialisasi Whisper untuk transkripsi audio
 whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
 
-# Fungsi analisis video
+# Fungsi analisis video sesuai arsitektur sistem
 async def analyze_video(video_file):
     try:
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
@@ -50,10 +50,10 @@ async def analyze_video(video_file):
             
             if results_face.multi_face_landmarks:
                 for landmarks in results_face.multi_face_landmarks:
-                    # Estimasi sederhana kontak mata berdasarkan posisi mata
+                    # Estimasi kontak mata berdasarkan posisi mata
                     eye_contact_score += 1
             if results_pose.pose_landmarks:
-                # Estimasi sederhana postur berdasarkan posisi bahu dan pinggul
+                # Estimasi postur berdasarkan posisi bahu dan pinggul
                 posture_score += 1
             
             frame_count += 1
@@ -88,11 +88,16 @@ async def analyze_video(video_file):
         st.error(f"Error dalam analisis video: {str(e)}")
         return None
 
-# UI Streamlit
+# UI Streamlit sesuai proposal
 st.title("BICARA - Bimbingan Cerdas Retorika Anda")
 st.write("Asisten Virtual Berbasis AI untuk Melatih Keterampilan Presentasi")
 
-uploaded_file = st.file_uploader("Unggah video presentasi Anda (maks. 3 menit, format MP4/MOV)", type=["mp4", "mov"])
+st.sidebar.header("Panduan Pengguna")
+st.sidebar.write("1. Unggah video presentasi (maks. 3 menit, format MP4/MOV).")
+st.sidebar.write("2. Klik 'Analisis Presentasi' untuk memproses.")
+st.sidebar.write("3. Lihat hasil dan rekomendasi di dasbor.")
+
+uploaded_file = st.file_uploader("Unggah Video Presentasi", type=["mp4", "mov"])
 if uploaded_file is not None:
     st.video(uploaded_file)
     if st.button("Analisis Presentasi"):
@@ -101,7 +106,7 @@ if uploaded_file is not None:
             if result:
                 st.success("Analisis selesai!")
                 
-                # Dasbor Hasil
+                # Dasbor Hasil sesuai arsitektur output layer
                 st.subheader("Hasil Analisis")
                 col1, col2 = st.columns(2)
                 with col1:
@@ -111,7 +116,7 @@ if uploaded_file is not None:
                     st.metric("Kecepatan Bicara (WPM)", f"{result['wpm']:.1f}")
                 
                 st.subheader("Kata Pengisi")
-                st.write(result['filler_words'])
+                st.bar_chart(result['filler_words'])
                 
                 st.subheader("Rekomendasi Praktis")
                 recommendations = []
