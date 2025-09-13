@@ -6,9 +6,8 @@ import tempfile
 import os
 import google.generativeai as genai
 
-# Konfigurasi API Gemini (ganti dengan API key kamu)
-# Simpan API key di secrets management Streamlit atau file .env
-API_KEY = st.secrets["AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"]  # Gunakan st.secrets untuk keamanan
+API_KEY = "AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"
+
 genai.configure(api_key=API_KEY)
 
 # Inisialisasi Whisper model (ringan: "tiny" untuk kecepatan)
