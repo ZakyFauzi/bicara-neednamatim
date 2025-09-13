@@ -1,21 +1,26 @@
 import streamlit as st
 import cv2
 import numpy as np
-from faster_whisper import WhisperModel
-import asyncio
+import whisper  # openai-whisper
 import tempfile
 import os
 
-# Inisialisasi Whisper untuk transkripsi audio
-whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+# Inisialisasi Whisper model (load sekali di awal untuk efisiensi)
+@st.cache_resource
+def load_whisper_model():
+    return whisper.load_model("base")
+
+whisper_model = load_whisper_model()
 
 # Fungsi analisis video menggunakan OpenCV untuk visual dan Whisper untuk audio
-async def analyze_video(video_file):
+def analyze_video(video_file):
     try:
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
         tfile.write(video_file.read())
+        tfile_path = tfile.name
+        tfile.close()
         
-        cap = cv2.VideoCapture(tfile.name)
+        cap = cv2.VideoCapture(tfile_path)
         if not cap.isOpened():
             raise ValueError("Gagal membuka video")
 
@@ -42,10 +47,8 @@ async def analyze_video(video_file):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             faces = face_cascade.detectMultiScale(gray, 1.1, 4)
             if len(faces) > 0:
-                # Estimasi sederhana kontak mata berdasarkan deteksi wajah
                 eye_contact_score += 1
             
-            # Estimasi sederhana postur berdasarkan ukuran frame (placeholder)
             if frame.shape[0] > 0 and frame.shape[1] > 0:
                 posture_score += 1
             
@@ -56,21 +59,18 @@ async def analyze_video(video_file):
         eye_contact_score = (eye_contact_score / total_frames) * 100 if total_frames > 0 else 0
         posture_score = (posture_score / total_frames) * 100 if total_frames > 0 else 0
 
-        # Analisis Audio dengan Whisper
-        segments, _ = whisper_model.transcribe(tfile.name, beam_size=1)
-        wpm = 0
+        # Analisis Audio dengan openai-whisper
+        result = whisper_model.transcribe(tfile_path)
+        full_text = result["text"].lower()
+        words = full_text.split()
+        duration = result["segments"][-1]["end"] if result["segments"] else 1  # Durasi total
+        wpm = len(words) / duration * 60 if duration > 0 else 0
         filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0}
-        for segment in segments:
-            text = segment.text.lower()
-            words = text.split()
-            wpm += len(words) / (segment.end - segment.start) * 60
-            for word in words:
-                if word in filler_words:
-                    filler_words[word] += 1
+        for word in words:
+            if word in filler_words:
+                filler_words[word] += 1
         
-        wpm = wpm / len(segments) if len(segments) > 0 else 0
-        
-        os.unlink(tfile.name)
+        os.unlink(tfile_path)
         return {
             "eye_contact_score": eye_contact_score,
             "posture_score": posture_score,
@@ -95,7 +95,7 @@ if uploaded_file is not None:
     st.video(uploaded_file)
     if st.button("Analisis Presentasi"):
         with st.spinner("Menganalisis video, mohon tunggu..."):
-            result = asyncio.run(analyze_video(uploaded_file))
+            result = analyze_video(uploaded_file)
             if result:
                 st.success("Analisis selesai!")
                 
