@@ -6,8 +6,11 @@ import tempfile
 import os
 import google.generativeai as genai
 
-API_KEY = "AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"
-
+# ===============================
+# Konfigurasi API Gemini
+# Ganti dengan API key kamu langsung (hardcode)
+# ===============================
+API_KEY = "PASTE_API_KEY_KAMU_DI_SINI"
 genai.configure(api_key=API_KEY)
 
 # Inisialisasi Whisper model (ringan: "tiny" untuk kecepatan)
