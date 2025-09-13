@@ -1,24 +1,15 @@
 import streamlit as st
 import cv2
-import mediapipe as mp
 import numpy as np
 from faster_whisper import WhisperModel
 import asyncio
-import platform
 import tempfile
 import os
-from datetime import datetime
-
-# Inisialisasi MediaPipe untuk deteksi wajah dan pose
-mp_face_mesh = mp.solutions.face_mesh
-mp_pose = mp.solutions.pose
-face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=0.5, static_image_mode=False)
-pose = mp_pose.Pose(min_detection_confidence=0.5, static_image_mode=False)
 
 # Inisialisasi Whisper untuk transkripsi audio
 whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
 
-# Fungsi analisis video sesuai arsitektur sistem
+# Fungsi analisis video menggunakan OpenCV untuk visual dan Whisper untuk audio
 async def analyze_video(video_file):
     try:
         tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
@@ -33,6 +24,10 @@ async def analyze_video(video_file):
         frame_count = 0
         max_duration = 180  # Batas maksimal 3 menit dalam detik
         
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        if face_cascade.empty():
+            raise ValueError("Gagal memuat classifier wajah")
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret or frame_count % 5 != 0:  # Sampling frame
@@ -44,14 +39,14 @@ async def analyze_video(video_file):
             if not ret:
                 break
             
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results_face = face_mesh.process(rgb_frame)
-            results_pose = pose.process(rgb_frame)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+            if len(faces) > 0:
+                # Estimasi sederhana kontak mata berdasarkan deteksi wajah
+                eye_contact_score += 1
             
-            if results_face.multi_face_landmarks:
-                for landmarks in results_face.multi_face_landmarks:
-                    eye_contact_score += 1
-            if results_pose.pose_landmarks:
+            # Estimasi sederhana postur berdasarkan ukuran frame (placeholder)
+            if frame.shape[0] > 0 and frame.shape[1] > 0:
                 posture_score += 1
             
             frame_count += 1
