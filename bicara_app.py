@@ -50,10 +50,8 @@ async def analyze_video(video_file):
             
             if results_face.multi_face_landmarks:
                 for landmarks in results_face.multi_face_landmarks:
-                    # Estimasi kontak mata berdasarkan posisi mata
                     eye_contact_score += 1
             if results_pose.pose_landmarks:
-                # Estimasi postur berdasarkan posisi bahu dan pinggul
                 posture_score += 1
             
             frame_count += 1
