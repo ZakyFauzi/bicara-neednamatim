@@ -1,5 +1,5 @@
-streamlit
-opencv-python-headless
-mediapipe
-faster-whisper
-numpy
+streamlit==1.49.1
+opencv-python-headless==4.12.0.88
+mediapipe==0.10.5
+faster-whisper==0.10.0
+numpy==1.26.4
