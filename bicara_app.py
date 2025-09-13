@@ -4,7 +4,12 @@ import numpy as np
 import whisper
 import tempfile
 import os
-from datetime import datetime
+import google.generativeai as genai
+
+# Konfigurasi API Gemini (ganti dengan API key kamu)
+# Simpan API key di secrets management Streamlit atau file .env
+API_KEY = st.secrets["AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"]  # Gunakan st.secrets untuk keamanan
+genai.configure(api_key=API_KEY)
 
 # Inisialisasi Whisper model (ringan: "tiny" untuk kecepatan)
 @st.cache_resource
@@ -35,7 +40,7 @@ def analyze_video(video_file):
 
         while cap.isOpened():
             ret, frame = cap.read()
-            if not ret or frame_count % 10 != 0:  # Tingkatkan sampling ke 10 frame
+            if not ret or frame_count % 10 != 0:  # Sampling 10 frame
                 frame_count += 1
                 continue
             if cap.get(cv2.CAP_PROP_POS_MSEC) / 1000 > max_duration:
@@ -104,14 +109,17 @@ def analyze_audio(audio_file):
         st.error(f"Error dalam analisis audio: {str(e)}")
         return None
 
-# Fungsi chatbot sederhana
+# Fungsi chatbot dengan Gemini
 def chatbot_response(input_text):
-    if "tips" in input_text.lower():
-        return "Tips presentasi: Jaga kontak mata, kurangi kata pengisi, dan bicara dengan ritme stabil."
-    elif "contoh" in input_text.lower():
-        return "Contoh pembukaan: 'Halo semua, terima kasih telah hadir, hari ini saya akan membahas...'"
-    else:
-        return "Silakan tanyakan tips atau contoh presentasi untuk bantuan lebih lanjut!"
+    if not input_text or not any(keyword in input_text.lower() for keyword in ["presentasi", "tips", "struktur", "kecemasan", "bicara", "pengantar"]):
+        return "Maaf, chatbot hanya mendukung diskusi seputar presentasi. Coba tanyakan tips presentasi, struktur, atau cara mengatasi kecemasan."
+    
+    prompt = f"Berikan jawaban singkat dan informatif tentang presentasi terkait: {input_text}. Fokus pada tips, struktur, atau pengelolaan kecemasan."
+    try:
+        response = genai.GenerativeModel('gemini-pro').generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error: {str(e)}. Coba lagi nanti."
 
 # UI dengan tiga section
 st.title("BICARA - Bimbingan Cerdas Retorika Anda")
@@ -119,7 +127,7 @@ st.write("Asisten Virtual Berbasis AI untuk Melatih Keterampilan Presentasi")
 
 # Section 1: Chatbot
 st.header("1. Diskusi dengan Chatbot")
-user_input = st.text_input("Tanyakan tentang presentasi (contoh: tips, contoh):")
+user_input = st.text_input("Tanyakan tentang presentasi (contoh: tips pembukaan, cara atasi grogi):")
 if user_input:
     response = chatbot_response(user_input)
     st.write("**Jawaban:**", response)
