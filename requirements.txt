@@ -2,3 +2,4 @@ streamlit==1.49.1
 opencv-python-headless==4.12.0.88
 openai-whisper
 numpy>=1.24.0
+google-generativeai
