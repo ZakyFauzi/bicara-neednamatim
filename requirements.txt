@@ -1,1 +1,5 @@
-streamlit opencv-python-headless mediapipe faster-whisper numpy
+streamlit
+opencv-python-headless
+mediapipe
+faster-whisper
+numpy
