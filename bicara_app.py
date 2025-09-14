@@ -8,10 +8,6 @@ import google.generativeai as genai
 import time
 import requests
 
-# ===============================
-# Konfigurasi API Gemini
-# Ganti dengan API key kamu langsung (hardcode)
-# ===============================
 API_KEY = "AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"
 genai.configure(api_key=API_KEY)
 
