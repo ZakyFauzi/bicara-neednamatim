@@ -74,9 +74,10 @@ def load_face_detector():
 
 # --- Fungsi-fungsi Analisis (Backend) ---
 def analyze_video(video_path):
+    # PERBAIKAN: Menambahkan st.error untuk menampilkan pesan error jika ada
     try:
         cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened(): return None
+        if not cap.isOpened(): raise ValueError("Gagal membuka file video.")
         face_detected_frames, processed_frame_count = 0, 0
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_interval = int(fps) if fps > 0 else 1
@@ -88,16 +89,19 @@ def analyze_video(video_path):
                 h, w, _ = frame.shape
                 face_detector.setInputSize((w, h))
                 faces = face_detector.detect(frame)
-                if faces[1] is not None and faces[1][0][14] > 0.9: # Filter confidence
+                if faces[1] is not None and faces[1][0][14] > 0.9:
                     face_detected_frames += 1
                 processed_frame_count += 1
             current_frame_idx += 1
         cap.release()
         score = (face_detected_frames / processed_frame_count) * 100 if processed_frame_count > 0 else 0
         return {"eye_contact_score": score}
-    except Exception: return None
+    except Exception as e:
+        st.error(f"Error di dalam fungsi analisis video: {e}")
+        return None
 
 def analyze_audio(file_path):
+    # PERBAIKAN: Menambahkan st.error untuk menampilkan pesan error jika ada
     try:
         result = whisper_model.transcribe(file_path, language="id", fp16=False)
         text = result.get("text", "").lower()
@@ -109,7 +113,9 @@ def analyze_audio(file_path):
         for word in words:
             if word in filler_words: filler_words[word] += 1
         return {"wpm": wpm, "filler_words": filler_words, "transcript": result.get("text", "Gagal mentranskripsi audio.")}
-    except Exception: return None
+    except Exception as e:
+        st.error(f"Error di dalam fungsi analisis audio: {e}")
+        return None
 
 @st.cache_data(ttl=300)
 def analyze_media_from_bytes(_file_bytes, media_type):
@@ -117,6 +123,8 @@ def analyze_media_from_bytes(_file_bytes, media_type):
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
         tfile.write(_file_bytes)
         temp_path = tfile.name
+    
+    # PERBAIKAN: Inisialisasi variabel untuk menghindari UnboundLocalError
     video_result, audio_result = None, None
     try:
         if media_type == 'video':
@@ -128,38 +136,36 @@ def analyze_media_from_bytes(_file_bytes, media_type):
 
 # --- Fungsi Chatbot ---
 def chatbot_response(input_text):
-    """Memberikan respons menggunakan Gemini API."""
     keywords = ["presentasi", "tips", "trik", "audiens", "public speaking", "ngomong", "belibet", "lantang", "tegas", "keras", "jelas", "struktur", "kecemasan", "bicara", "pengantar", "suara", "grogi", "pembuka", "penutup"]
     if not input_text or not any(keyword in input_text.lower() for keyword in keywords):
         return "Maaf, saya hanya AI Coach untuk topik presentasi. Coba tanyakan tips pembukaan atau cara mengatasi grogi."
-    
-    prompt = f"Sebagai seorang ahli public speaking di Indonesia, berikan jawaban singkat dan praktis (maksimal 3-4 kalimat) mengenai: '{input_text}'. Gunakan bahasa yang memotivasi dan mudah dimengerti."
+    prompt = f"Sebagai seorang ahli public speaking, berikan jawaban singkat dan praktis (maksimal 3-4 kalimat) mengenai: '{input_text}'. Gunakan bahasa yang memotivasi dan mudah dimengerti."
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"Terjadi kesalahan saat menghubungi AI. Coba lagi nanti. Error: {str(e)}"
+        return f"Terjadi kesalahan saat menghubungi AI: {e}"
 
 # --- 3. UI STREAMLIT (BAGIAN UTAMA TAMPILAN) ---
 
-# --- Sidebar untuk Branding ---
+# --- Sidebar ---
 with st.sidebar:
     st.title("🎙️ BICARA AI")
-    st.info("""
-        **BICARA (Bimbingan Cerdas Retorika Anda)** adalah purwarupa asisten virtual untuk melatih keterampilan presentasi Anda.
-        
-        *Proyek untuk Lomba Inovasi Digital Mahasiswa (LIDM) 2025.*
-    """)
-    st.caption("Dikembangkan oleh Tim NeedNamaTim")
+    st.info("Asisten virtual untuk melatih keterampilan presentasi Anda. Proyek untuk LIDM 2025.")
+    st.caption("Dikembangkan oleh Tim Anda")
 
-# --- Navigasi Utama Menggunakan Tabs ---
-tab1, tab2, tab3 = st.tabs(["**🚀 Analisis Presentasimu**", "**💬 Tanya AI Coach**", "**ℹ️ Tentang Proyek**"])
+# --- Muat model di awal ---
+whisper_model = load_whisper_model()
+face_detector = load_face_detector()
+
+# --- Navigasi Utama ---
+tab1, tab2, tab3 = st.tabs(["**🚀 Latih Analisis**", "**💬 Tanya AI Coach**", "**ℹ️ Tentang Proyek**"])
 
 # --- TAB 1: Latih Analisis ---
 with tab1:
     st.header("Unggah Media untuk Dianalisis")
-    st.markdown("Pilih jenis media yang ingin Anda analisis. Untuk hasil terbaik, gunakan video/audio dengan suara jernih dan durasi **maksimal 3 menit**.")
+    st.markdown("Pilih jenis media. Untuk hasil terbaik, gunakan video/audio dengan suara jernih dan durasi **maksimal 3 menit**.")
 
     analysis_type_tab1, analysis_type_tab2 = st.tabs(["🎬 **Analisis Video Lengkap**", "🎵 **Analisis Audio Saja**"])
 
@@ -168,36 +174,36 @@ with tab1:
         if video_file:
             video_bytes = video_file.getvalue()
             st.video(video_bytes)
-            if st.button("Analisis Video Ini", use_container_width=True, type="primary"):
+            # PERBAIKAN: Menambahkan key unik pada tombol
+            if st.button("Analisis Video Ini", use_container_width=True, type="primary", key="analyze_video_button"):
                 with st.spinner("Menganalisis video... Proses ini mungkin memakan waktu 1-2 menit."):
                     video_result, audio_result = analyze_media_from_bytes(video_bytes, 'video')
                     
                     if video_result and audio_result:
                         st.success("Analisis Selesai!")
                         st.subheader("📊 Dasbor Umpan Balik")
-                        
                         with st.container(border=True):
                             col1, col2 = st.columns(2)
-                            with col1: render_gauge("Kontak Mata", video_result['eye_contact_score'], 100, "%")
-                            with col2: render_gauge("Kecepatan Bicara", audio_result['wpm'], 180, " WPM")
+                            with col1: render_gauge("Kontak Mata", video_result.get('eye_contact_score', 0), 100, "%")
+                            with col2: render_gauge("Kecepatan Bicara", audio_result.get('wpm', 0), 180, " WPM")
                             st.divider()
                             st.markdown("##### 🗣️ Kata Pengisi yang Terdeteksi")
-                            st.bar_chart(audio_result['filler_words'])
+                            st.bar_chart(audio_result.get('filler_words', {}))
 
                         st.subheader("💡 Rekomendasi Praktis")
                         with st.container(border=True):
                             recommendations = []
-                            if audio_result['wpm'] > 160: recommendations.append("🏃‍♂️ **Kecepatan Bicara Agak Tinggi.** Coba ambil jeda sejenak agar audiens lebih mudah mengikuti.")
-                            elif audio_result['wpm'] < 110 and audio_result['wpm'] > 0: recommendations.append("🐢 **Kecepatan Bicara Agak Lambat.** Coba tingkatkan antusiasme agar audiens tetap terlibat.")
+                            wpm = audio_result.get('wpm', 0)
+                            fillers = audio_result.get('filler_words', {})
+                            eye_contact = video_result.get('eye_contact_score', 0)
+                            if wpm > 160: recommendations.append("🏃‍♂️ **Kecepatan Bicara Agak Tinggi.** Coba ambil jeda sejenak.")
+                            elif wpm < 110 and wpm > 0: recommendations.append("🐢 **Kecepatan Bicara Agak Lambat.** Coba tingkatkan antusiasme.")
+                            if sum(fillers.values()) > 5:
+                                most_filler = max(fillers, key=fillers.get)
+                                recommendations.append(f"🤔 **Kata Pengisi Cukup Banyak.** Anda sering menggunakan '{most_filler}'.")
+                            if eye_contact < 60: recommendations.append("👀 **Kontak Mata Bisa Ditingkatkan.** Pastikan wajah selalu menghadap kamera.")
                             
-                            total_fillers = sum(audio_result['filler_words'].values())
-                            if total_fillers > 5:
-                                most_filler = max(audio_result['filler_words'], key=audio_result['filler_words'].get)
-                                recommendations.append(f"🤔 **Kata Pengisi Cukup Banyak.** Anda sering menggunakan '{most_filler}'. Latih kesadaran untuk mengurangi penggunaannya.")
-                            
-                            if video_result['eye_contact_score'] < 60: recommendations.append("👀 **Kontak Mata Bisa Ditingkatkan.** Pastikan wajah selalu menghadap ke depan/kamera.")
-                            
-                            if not recommendations: st.success("🎉 **Kerja Bagus!** Metrik utama Anda sudah berada dalam rentang yang ideal. Pertahankan!")
+                            if not recommendations: st.success("🎉 **Kerja Bagus!** Metrik utama Anda sudah ideal.")
                             else:
                                 for rec in recommendations: st.warning(rec)
 
@@ -208,7 +214,8 @@ with tab1:
     with analysis_type_tab2:
         audio_file = st.file_uploader("Unggah File Audio (MP3, WAV, M4A maks. 10 MB)", type=["mp3", "wav", "m4a"], key="audio_uploader")
         if audio_file:
-            if st.button("Analisis Audio Ini", use_container_width=True, type="primary"):
+            # PERBAIKAN: Menambahkan key unik pada tombol
+            if st.button("Analisis Audio Ini", use_container_width=True, type="primary", key="analyze_audio_button"):
                 audio_bytes = audio_file.getvalue()
                 with st.spinner("Menganalisis audio..."):
                     _, audio_result = analyze_media_from_bytes(audio_bytes, 'audio')
@@ -216,10 +223,10 @@ with tab1:
                         st.success("Analisis Selesai!")
                         st.subheader("📊 Dasbor Umpan Balik Audio")
                         with st.container(border=True):
-                            render_gauge("Kecepatan Bicara", audio_result['wpm'], 180, " WPM")
+                            render_gauge("Kecepatan Bicara", audio_result.get('wpm', 0), 180, " WPM")
                             st.divider()
                             st.markdown("##### 🗣️ Kata Pengisi yang Terdeteksi")
-                            st.bar_chart(audio_result['filler_words'])
+                            st.bar_chart(audio_result.get('filler_words', {}))
                         st.subheader("📄 Transkrip Teks")
                         with st.expander("Lihat Transkrip Lengkap"):
                             st.info(audio_result.get('transcript', 'Transkrip tidak tersedia.'))
@@ -227,10 +234,10 @@ with tab1:
 # --- TAB 2: Tanya AI Coach ---
 with tab2:
     st.header("Tanya AI Coach")
-    st.markdown("Punya pertanyaan seputar *public speaking*? Tanyakan pada AI Coach kami untuk mendapatkan tips dan trik praktis.")
+    st.markdown("Punya pertanyaan seputar *public speaking*? Tanyakan pada AI Coach kami.")
     
     if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "Halo! Ada yang bisa saya bantu terkait persiapan presentasi Anda?"}]
+        st.session_state.messages = [{"role": "assistant", "content": "Halo! Ada yang bisa saya bantu terkait presentasi Anda?"}]
 
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -238,12 +245,11 @@ with tab2:
 
     if prompt := st.chat_input("Tulis pertanyaan Anda di sini..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with st.chat_message("user"): st.markdown(prompt)
 
         with st.chat_message("assistant"):
             with st.spinner("AI Coach sedang berpikir..."):
-                response = chatbot_response(prompt) # INI ADALAH PEMANGGILAN FUNGSI
+                response = chatbot_response(prompt)
                 st.markdown(response)
         
         st.session_state.messages.append({"role": "assistant", "content": response})
@@ -251,27 +257,16 @@ with tab2:
 # --- TAB 3: Tentang Proyek ---
 with tab3:
     st.header("Tentang Proyek BICARA")
+    # ... (Isi bagian ini tidak diubah)
     st.markdown("""
-    **BICARA (Bimbingan Cerdas Retorika Anda)** adalah sebuah purwarupa fungsional yang dikembangkan sebagai bagian dari Lomba Inovasi Digital Mahasiswa (LIDM) 2025.
-    
+    **BICARA (Bimbingan Cerdas Retorika Anda)** adalah purwarupa fungsional yang dikembangkan sebagai bagian dari Lomba Inovasi Digital Mahasiswa (LIDM) 2025.
     #### **Tujuan Utama**
-    Proyek ini bertujuan untuk menyediakan alat bantu yang dapat diakses oleh semua kalangan pelajar untuk melatih keterampilan presentasi secara mandiri. Dengan memanfaatkan kecerdasan buatan, kami berharap dapat memberikan umpan balik yang objektif dan terukur, yang sebelumnya sulit didapatkan tanpa bantuan seorang pelatih profesional.
-    
+    Proyek ini bertujuan untuk menyediakan alat bantu yang dapat diakses oleh semua kalangan pelajar untuk melatih keterampilan presentasi secara mandiri.
     #### **Teknologi yang Digunakan**
     - **Framework Aplikasi:** Streamlit
     - **Analisis Visual:** OpenCV (FaceDetectorYN - YuNet)
     - **Analisis Vokal:** OpenAI Whisper (Model 'tiny')
     - **AI Chatbot:** Google Gemini (Model 'gemini-1.5-flash')
-    
     #### **Tim Pengembang**
-    - Zaky Muhammad Fauzi
-    - Syauqi Gathan Setyapratama
-    - Ghifary Wibisono
-    - Jondri (Dosen Pembimbing)
-    
-    **Universitas Telkom**
+    - Zaky Muhammad Fauzi, Syauqi Gathan Setyapratama, Ghifary Wibisono, Jondri (Dosen Pembimbing)
     """)
-
-# Memuat model di awal untuk mengurangi jeda saat tombol ditekan pertama kali
-load_whisper_model()
-load_face_detector()
