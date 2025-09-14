@@ -19,7 +19,7 @@ genai.configure(api_key=API_KEY)
 def load_whisper_model():
     st.write("Memuat model Whisper multibahasa... (ini hanya sekali di awal)")
     start_time = time.time()
-    model = whisper.load_model("tiny", device="cpu", compute_type="int8", fp16=False)  # Optimasi CPU
+    model = whisper.load_model("tiny", device="cpu")  # Hanya device=CPU, hapus compute_type & fp16
     st.write(f"Model dimuat dalam {time.time() - start_time:.2f} detik.")
     return model
 
