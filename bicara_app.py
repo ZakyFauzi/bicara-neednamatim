@@ -19,7 +19,7 @@ genai.configure(api_key=API_KEY)
 def load_whisper_model():
     st.write("Memuat model Whisper multibahasa... (ini hanya sekali di awal)")
     start_time = time.time()
-    model = whisper.load_model("tiny")  # Kembali ke tiny untuk multibahasa
+    model = whisper.load_model("tiny")
     st.write(f"Model dimuat dalam {time.time() - start_time:.2f} detik.")
     return model
 
@@ -30,7 +30,7 @@ whisper_model = load_whisper_model()
 def analyze_video_cached(video_file):
     return analyze_video(video_file)
 
-# Fungsi analisis video (dioptimalkan untuk Indonesia)
+# Fungsi analisis video (fokus kontak mata dan audio)
 def analyze_video(video_file):
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tfile:
@@ -42,7 +42,6 @@ def analyze_video(video_file):
             raise ValueError("Gagal membuka video")
 
         eye_contact_score = 0
-        posture_score = 0
         frame_count = 0
         max_duration = 180
         
@@ -52,7 +51,7 @@ def analyze_video(video_file):
 
         while cap.isOpened():
             ret, frame = cap.read()
-            if not ret or frame_count % 20 != 0:  # Tingkatkan sampling ke 20 frame
+            if not ret or frame_count % 30 != 0:  # Sampling 30 frame
                 frame_count += 1
                 continue
             if cap.get(cv2.CAP_PROP_POS_MSEC) / 1000 > max_duration:
@@ -62,27 +61,23 @@ def analyze_video(video_file):
                 break
             
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, 1.1, 3)  # Kurangi deteksi sensitivitas
+            faces = face_cascade.detectMultiScale(gray, 1.1, 3)
             if len(faces) > 0:
                 eye_contact_score += 1
-            
-            if frame.shape[0] > 0 and frame.shape[1] > 0:
-                posture_score += 1
             
             frame_count += 1
         
         cap.release()
-        total_frames = frame_count // 20 if frame_count > 0 else 1
+        total_frames = frame_count // 30 if frame_count > 0 else 1
         eye_contact_score = (eye_contact_score / total_frames) * 100 if total_frames > 0 else 0
-        posture_score = (posture_score / total_frames) * 100 if total_frames > 0 else 0
 
-        # Analisis audio dengan fokus Indonesia
-        result = whisper_model.transcribe(tfile_path, language="id")  # Eksplisit bahasa Indonesia
+        # Analisis audio dalam segmen pendek
+        result = whisper_model.transcribe(tfile_path, language="id", chunk_size=5)  # Proses 5 detik per segmen
         full_text = result["text"].lower()
         words = full_text.split()
         duration = result["segments"][-1]["end"] if result["segments"] else 1
         wpm = len(words) / duration * 60 if duration > 0 else 0
-        filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0, "ya": 0, "lah": 0}  # Tambah filler lokal
+        filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0, "ya": 0, "lah": 0}
         for word in words:
             if word in filler_words:
                 filler_words[word] += 1
@@ -90,7 +85,6 @@ def analyze_video(video_file):
         os.unlink(tfile_path)
         return {
             "eye_contact_score": eye_contact_score,
-            "posture_score": posture_score,
             "wpm": wpm,
             "filler_words": filler_words
         }
@@ -105,7 +99,7 @@ def analyze_audio(audio_file):
             tfile.write(audio_file.read())
             tfile_path = tfile.name
         
-        result = whisper_model.transcribe(tfile_path, language="id")
+        result = whisper_model.transcribe(tfile_path, language="id", chunk_size=5)
         full_text = result["text"].lower()
         words = full_text.split()
         duration = result["segments"][-1]["end"] if result["segments"] else 1
@@ -174,14 +168,15 @@ if video_file:
     st.video(video_file)
     if st.button("Analisis Video"):
         with st.spinner("Menganalisis video, mohon tunggu..."):
+            start_time = time.time()
             result = analyze_video_cached(video_file)
+            st.write(f"Waktu analisis: {time.time() - start_time:.2f} detik")
             if result:
                 st.success("Analisis video selesai!")
                 st.subheader("Hasil Analisis Video")
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("Skor Kontak Mata", f"{result['eye_contact_score']:.1f}%")
-                    st.metric("Skor Postur", f"{result['posture_score']:.1f}%")
                 with col2:
                     st.metric("Kecepatan Bicara (WPM)", f"{result['wpm']:.1f}")
                 st.subheader("Kata Pengisi")
