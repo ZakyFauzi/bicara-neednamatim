@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 import google.generativeai as genai
 import time
-from mtcnn import MTCNN
+import requests
 
 # ===============================
 # Konfigurasi API Gemini
@@ -16,97 +16,127 @@ from mtcnn import MTCNN
 API_KEY = "AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"
 genai.configure(api_key=API_KEY)
 
-# --- FUNGSI CACHE & LOAD MODEL ---
 @st.cache_resource(ttl=3600)
 def load_whisper_model():
+    """Memuat model Whisper sekali dan menyimpannya di cache."""
     st.write("Memuat model Whisper...")
-    model = whisper.load_model("tiny", device="cpu")
+    model = whisper.load_model("tiny") # Model 'tiny' sudah cukup cepat dan bagus
     return model
 
+def download_file(url, file_path):
+    """Fungsi helper untuk mengunduh model jika belum ada."""
+    if not os.path.exists(file_path):
+        st.write(f"Mengunduh model deteksi wajah: {os.path.basename(file_path)}...")
+        r = requests.get(url, allow_redirects=True)
+        open(file_path, 'wb').write(r.content)
+
 @st.cache_resource(ttl=3600)
-def load_mtcnn_model():
-    st.write("Memuat model deteksi wajah MTCNN...")
-    detector = MTCNN()
+def load_face_detector():
+    """Memuat model deteksi wajah YuNet dari OpenCV sekali dan menyimpannya di cache."""
+    st.write("Memuat model deteksi wajah (YuNet)...")
+    
+    # URL model dari repository OpenCV di GitHub
+    model_url = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
+    model_path = "face_detection_yunet_2023mar.onnx"
+    
+    download_file(model_url, model_path)
+    
+    detector = cv2.FaceDetectorYN.create(model_path, "", (0, 0))
     return detector
 
 whisper_model = load_whisper_model()
-mtcnn_detector = load_mtcnn_model()
+face_detector = load_face_detector()
 
-# --- FUNGSI ANALISIS UTAMA ---
+# --- FUNGSI-FUNGSI ANALISIS ---
+
 def analyze_video(video_path):
+    """Menganalisis file video untuk deteksi wajah menggunakan YuNet yang cepat."""
     try:
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
-            raise ValueError("Gagal membuka video dari path")
+            raise ValueError("Gagal membuka file video.")
 
         face_detected_frames = 0
         processed_frame_count = 0
         
-        fps = int(cap.get(cv2.CAP_PROP_FPS))
-        frame_interval = fps if fps > 0 else 1 # Proses 1 frame per detik
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_interval = int(fps) if fps > 0 else 1  # Proses 1 frame per detik
 
-        current_frame = 0
+        current_frame_idx = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
 
-            if current_frame % frame_interval == 0:
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                faces = mtcnn_detector.detect_faces(frame_rgb)
+            if current_frame_idx % frame_interval == 0:
+                h, w, _ = frame.shape
+                face_detector.setInputSize((w, h))
                 
-                if len(faces) > 0 and faces[0]['confidence'] > 0.90:
+                # Deteksi wajah
+                faces = face_detector.detect(frame)
+                
+                # faces[1] akan berisi data jika wajah terdeteksi
+                if faces[1] is not None:
                     face_detected_frames += 1
+                
                 processed_frame_count += 1
             
-            current_frame += 1
+            current_frame_idx += 1
 
         cap.release()
-        eye_contact_score = (face_detected_frames / processed_frame_count) * 100 if processed_frame_count > 0 else 0
-        return {"eye_contact_score": eye_contact_score}
+        
+        score = (face_detected_frames / processed_frame_count) * 100 if processed_frame_count > 0 else 0
+        return {"eye_contact_score": score}
+
     except Exception as e:
         st.error(f"Error dalam analisis video: {str(e)}")
         return None
 
 def analyze_audio(file_path):
+    """Menganalisis file audio untuk transkripsi, WPM, dan kata pengisi."""
     try:
-        result = whisper_model.transcribe(file_path, language="id")
-        full_text = result.get("text", "").lower()
-        words = full_text.split()
+        result = whisper_model.transcribe(file_path, language="id", fp16=False) # fp16=False untuk CPU
+        text = result.get("text", "").lower()
+        words = text.split()
         
         duration_seconds = result["segments"][-1]["end"] if result.get("segments") else 1
-        duration_minutes = duration_seconds / 60.0
+        duration_minutes = max(1, duration_seconds) / 60.0
         
-        wpm = len(words) / duration_minutes if duration_minutes > 0 else 0
+        wpm = len(words) / duration_minutes
         
-        filler_words_count = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0, "ya": 0, "lah": 0}
+        filler_words = {"eh": 0, "hmm": 0, "anu": 0, "ehm": 0, "ya": 0, "lah": 0}
         for word in words:
-            if word in filler_words_count:
-                filler_words_count[word] += 1
+            if word in filler_words:
+                filler_words[word] += 1
         
-        return {"wpm": wpm, "filler_words": filler_words_count, "transcript": result.get("text", "Gagal mentranskripsi audio.")}
+        return {"wpm": wpm, "filler_words": filler_words, "transcript": result.get("text", "Gagal mentranskripsi audio.")}
     except Exception as e:
         st.error(f"Error dalam analisis audio: {str(e)}")
         return None
 
 @st.cache_data(ttl=300)
-def analyze_media_cached(_file_bytes, file_type):
-    suffix = ".mp4" if file_type == 'video' else ".mp3"
+def analyze_media_from_bytes(_file_bytes, media_type):
+    """Menyimpan file dari bytes dan menjalankan analisis yang sesuai."""
+    suffix = ".mp4" if media_type == 'video' else ".mp3"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tfile:
         tfile.write(_file_bytes)
-        tfile_path = tfile.name
+        temp_path = tfile.name
 
-    video_result = None
-    if file_type == 'video':
-        video_result = analyze_video(tfile_path)
-    
-    audio_result = analyze_audio(tfile_path)
+    video_result, audio_result = None, None
+    try:
+        if media_type == 'video':
+            video_result = analyze_video(temp_path)
+        audio_result = analyze_audio(temp_path)
+    finally:
+        os.unlink(temp_path) # Pastikan file temporer selalu dihapus
 
-    os.unlink(tfile_path)
     return video_result, audio_result
 
 # --- FUNGSI CHATBOT ---
+
 def chatbot_response(input_text):
+    """Memberikan respons menggunakan Gemini API."""
+    # ... (fungsi chatbot Anda sudah baik, tidak perlu diubah)
     if not input_text or not any(keyword in input_text.lower() for keyword in ["presentasi", "tips", "struktur", "kecemasan", "bicara", "pengantar"]):
         return "Maaf, chatbot hanya mendukung diskusi seputar presentasi. Coba tanyakan tips presentasi atau cara mengatasi kecemasan."
     
@@ -118,10 +148,13 @@ def chatbot_response(input_text):
     except Exception as e:
         return f"Terjadi kesalahan saat menghubungi AI. Coba lagi nanti. Error: {str(e)}"
 
+
 # --- UI STREAMLIT ---
+
 st.title("BICARA - Bimbingan Cerdas Retorika Anda")
 st.write("Asisten Virtual Berbasis AI untuk Masyarakat Indonesia dalam Melatih Keterampilan Presentasi")
 
+# ... (Sisa UI Anda sudah baik, bisa langsung disalin dari kode sebelumnya)
 # Section 1: Chatbot
 st.header("1. Diskusi dengan Chatbot")
 user_input = st.text_input("Tanyakan tentang presentasi (contoh: tips pembukaan, cara atasi grogi):", key="chatbot_input")
@@ -137,7 +170,7 @@ if audio_file:
         audio_bytes = audio_file.getvalue()
         with st.spinner("Menganalisis audio, mohon tunggu..."):
             start_time = time.time()
-            _, result = analyze_media_cached(audio_bytes, 'audio')
+            _, result = analyze_media_from_bytes(audio_bytes, 'audio')
             st.write(f"Waktu analisis: {time.time() - start_time:.2f} detik")
             if result:
                 st.success("Analisis audio selesai!")
@@ -158,7 +191,7 @@ if video_file:
     if st.button("Analisis Video"):
         with st.spinner("Menganalisis video, ini mungkin butuh waktu lebih lama..."):
             start_time = time.time()
-            video_result, audio_result = analyze_media_cached(video_bytes, 'video')
+            video_result, audio_result = analyze_media_from_bytes(video_bytes, 'video')
             st.write(f"Waktu analisis: {time.time() - start_time:.2f} detik")
             if video_result and audio_result:
                 st.success("Analisis video selesai!")
@@ -180,7 +213,7 @@ if video_file:
                 recommendations = []
                 if audio_result['wpm'] > 160:
                     recommendations.append("Kecepatan bicara Anda agak tinggi. Coba ambil jeda sejenak antar kalimat agar audiens lebih mudah mengikuti.")
-                elif audio_result['wpm'] < 110:
+                elif audio_result['wpm'] < 110 and audio_result['wpm'] > 0:
                      recommendations.append("Kecepatan bicara Anda agak lambat. Coba tingkatkan sedikit antusiasme agar audiens tetap terlibat.")
                 
                 if sum(audio_result['filler_words'].values()) > 5:
