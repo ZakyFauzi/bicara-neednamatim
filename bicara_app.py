@@ -4,7 +4,6 @@ import numpy as np
 import whisper
 import tempfile
 import os
-from dotenv import load_dotenv
 import google.generativeai as genai
 import time
 import requests
