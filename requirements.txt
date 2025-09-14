@@ -1,7 +1,7 @@
-streamlit==1.49.1
-opencv-python-headless==4.12.0.88
+streamlit
+opencv-python-headless
 openai-whisper
-numpy>=1.24.0
+numpy
 google-generativeai
 mtcnn==0.1.1
-tensorflow-cpu==2.16.1
+tensorflow-cpu~=2.15.0
