@@ -19,18 +19,18 @@ genai.configure(api_key=API_KEY)
 def load_whisper_model():
     st.write("Memuat model Whisper multibahasa... (ini hanya sekali di awal)")
     start_time = time.time()
-    model = whisper.load_model("tiny")
+    model = whisper.load_model("tiny", device="cpu", compute_type="int8", fp16=False)  # Optimasi CPU
     st.write(f"Model dimuat dalam {time.time() - start_time:.2f} detik.")
     return model
 
 whisper_model = load_whisper_model()
 
 # Cache hasil analisis untuk video yang sama
-@st.cache_data
+@st.cache_data(ttl=300)  # Cache 5 menit
 def analyze_video_cached(video_file):
-    return analyze_video(video_file)
+    return analyze_video(video_file), analyze_audio_from_video(video_file)
 
-# Fungsi analisis video (fokus kontak mata dan audio)
+# Fungsi analisis video (fokus kontak mata)
 def analyze_video(video_file):
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tfile:
@@ -51,7 +51,7 @@ def analyze_video(video_file):
 
         while cap.isOpened():
             ret, frame = cap.read()
-            if not ret or frame_count % 30 != 0:  # Sampling 30 frame
+            if not ret or frame_count % 50 != 0:  # Sampling 50 frame
                 frame_count += 1
                 continue
             if cap.get(cv2.CAP_PROP_POS_MSEC) / 1000 > max_duration:
@@ -68,11 +68,22 @@ def analyze_video(video_file):
             frame_count += 1
         
         cap.release()
-        total_frames = frame_count // 30 if frame_count > 0 else 1
+        total_frames = frame_count // 50 if frame_count > 0 else 1
         eye_contact_score = (eye_contact_score / total_frames) * 100 if total_frames > 0 else 0
 
-        # Analisis audio dalam segmen pendek
-        result = whisper_model.transcribe(tfile_path, language="id", chunk_size=5)  # Proses 5 detik per segmen
+        return {"eye_contact_score": eye_contact_score}
+    except Exception as e:
+        st.error(f"Error dalam analisis video: {str(e)}")
+        return None
+
+# Fungsi analisis audio dari video (terpisah untuk paralel)
+def analyze_audio_from_video(video_file):
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tfile:
+            tfile.write(video_file.read())
+            tfile_path = tfile.name
+        
+        result = whisper_model.transcribe(tfile_path, language="id", chunk_length_s=2)  # Chunk 2 detik
         full_text = result["text"].lower()
         words = full_text.split()
         duration = result["segments"][-1]["end"] if result["segments"] else 1
@@ -83,23 +94,19 @@ def analyze_video(video_file):
                 filler_words[word] += 1
         
         os.unlink(tfile_path)
-        return {
-            "eye_contact_score": eye_contact_score,
-            "wpm": wpm,
-            "filler_words": filler_words
-        }
+        return {"wpm": wpm, "filler_words": filler_words}
     except Exception as e:
-        st.error(f"Error dalam analisis video: {str(e)}")
+        st.error(f"Error dalam analisis audio: {str(e)}")
         return None
 
-# Fungsi analisis audio
+# Fungsi analisis audio (standalone)
 def analyze_audio(audio_file):
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tfile:
             tfile.write(audio_file.read())
             tfile_path = tfile.name
         
-        result = whisper_model.transcribe(tfile_path, language="id", chunk_size=5)
+        result = whisper_model.transcribe(tfile_path, language="id", chunk_length_s=2)
         full_text = result["text"].lower()
         words = full_text.split()
         duration = result["segments"][-1]["end"] if result["segments"] else 1
@@ -145,7 +152,9 @@ audio_file = st.file_uploader("Unggah File Audio (MP3, maks. 3 menit)", type=["m
 if audio_file:
     if st.button("Analisis Audio"):
         with st.spinner("Menganalisis audio, mohon tunggu..."):
+            start_time = time.time()
             result = analyze_audio(audio_file)
+            st.write(f"Waktu analisis: {time.time() - start_time:.2f} detik")
             if result:
                 st.success("Analisis audio selesai!")
                 st.subheader("Hasil Analisis Audio")
@@ -169,26 +178,26 @@ if video_file:
     if st.button("Analisis Video"):
         with st.spinner("Menganalisis video, mohon tunggu..."):
             start_time = time.time()
-            result = analyze_video_cached(video_file)
+            video_result, audio_result = analyze_video_cached(video_file)
             st.write(f"Waktu analisis: {time.time() - start_time:.2f} detik")
-            if result:
+            if video_result and audio_result:
                 st.success("Analisis video selesai!")
                 st.subheader("Hasil Analisis Video")
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Skor Kontak Mata", f"{result['eye_contact_score']:.1f}%")
+                    st.metric("Skor Kontak Mata", f"{video_result['eye_contact_score']:.1f}%")
                 with col2:
-                    st.metric("Kecepatan Bicara (WPM)", f"{result['wpm']:.1f}")
+                    st.metric("Kecepatan Bicara (WPM)", f"{audio_result['wpm']:.1f}")
                 st.subheader("Kata Pengisi")
-                st.bar_chart(result['filler_words'])
+                st.bar_chart(audio_result['filler_words'])
                 st.subheader("Rekomendasi Praktis")
                 recommendations = []
-                if result['wpm'] > 150:
+                if audio_result['wpm'] > 150:
                     recommendations.append("Coba kurangi kecepatan bicara agar lebih jelas.")
-                if max(result['filler_words'].values()) > 0:
-                    most_filler = max(result['filler_words'], key=result['filler_words'].get)
+                if max(audio_result['filler_words'].values()) > 0:
+                    most_filler = max(audio_result['filler_words'], key=audio_result['filler_words'].get)
                     recommendations.append(f"Kurangi penggunaan kata '{most_filler}' untuk kesan profesional.")
-                if result['eye_contact_score'] < 50:
+                if video_result['eye_contact_score'] < 50:
                     recommendations.append("Pertahankan kontak mata lebih lama untuk terhubung dengan audiens.")
                 st.write("- " + "\n- ".join(recommendations) if recommendations else "Presentasi video Anda sudah sangat baik!")
 
