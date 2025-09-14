@@ -136,7 +136,7 @@ def analyze_media_from_bytes(_file_bytes, media_type):
 def chatbot_response(input_text):
     """Memberikan respons menggunakan Gemini API."""
     # ... (fungsi chatbot Anda sudah baik, tidak perlu diubah)
-    if not input_text or not any(keyword in input_text.lower() for keyword in ["presentasi", "tips", "struktur", "kecemasan", "bicara", "pengantar"]):
+    if not input_text or not any(keyword in input_text.lower() for keyword in ["presentasi", "tips", "trik", "audiens", "public speaking", "ngomong", "belibet", "lantang", "tegas", "keras", "jelas", "struktur", "kecemasan", "bicara", "pengantar", "suara", "grogi", "pembuka", "penutup"]):
         return "Maaf, chatbot hanya mendukung diskusi seputar presentasi. Coba tanyakan tips presentasi atau cara mengatasi kecemasan."
     
     prompt = f"Sebagai seorang ahli public speaking di Indonesia, berikan jawaban singkat dan praktis (maksimal 3-4 kalimat) mengenai: '{input_text}'. Gunakan bahasa yang memotivasi dan mudah dimengerti."
