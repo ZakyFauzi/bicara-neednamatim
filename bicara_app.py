@@ -153,14 +153,14 @@ def chatbot_response(input_text):
 with st.sidebar:
     st.title("🎙️ BICARA AI")
     st.info("Asisten virtual untuk melatih keterampilan presentasi Anda. Proyek untuk LIDM 2025.")
-    st.caption("Dikembangkan oleh Tim Anda")
+    st.caption("Dikembangkan oleh NeedNamaTim")
 
 # --- Muat model di awal ---
 whisper_model = load_whisper_model()
 face_detector = load_face_detector()
 
 # --- Navigasi Utama ---
-tab1, tab2, tab3 = st.tabs(["**🚀 Latih Analisis**", "**💬 Tanya AI Coach**", "**ℹ️ Tentang Proyek**"])
+tab1, tab2, tab3 = st.tabs(["**🚀 Analisis Kemampuanmu**", "**💬 Tanya AI Coach**", "**ℹ️ Tentang Proyek**"])
 
 # --- TAB 1: Latih Analisis ---
 with tab1:
