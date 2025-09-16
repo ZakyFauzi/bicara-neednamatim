@@ -7,8 +7,8 @@ import os
 import google.generativeai as genai
 import time
 import requests
+from dotenv import load_dotenv
 
-# --- 1. KONFIGURASI HALAMAN & API KEY (WAJIB PALING ATAS) ---
 st.set_page_config(
     page_title="BICARA AI",
     page_icon="🎙️",
@@ -16,11 +16,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-API_KEY = "AIzaSyDul_w9C1brfAq2ujvh_mLY-EyTnTHq5Ro"
-genai.configure(api_key=API_KEY)
+load_dotenv()
 
+API_KEY = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY"))
 
-# --- 2. SEMUA DEFINISI FUNGSI DI SINI ---
 
 # --- Fungsi Helper untuk Tampilan (UI/UX) ---
 def render_gauge(label, value, max_value, unit):
@@ -101,7 +100,6 @@ def analyze_video(video_path):
         return None
 
 def analyze_audio(file_path):
-    # PERBAIKAN: Menambahkan st.error untuk menampilkan pesan error jika ada
     try:
         result = whisper_model.transcribe(file_path, language="id", fp16=False)
         text = result.get("text", "").lower()
@@ -124,7 +122,6 @@ def analyze_media_from_bytes(_file_bytes, media_type):
         tfile.write(_file_bytes)
         temp_path = tfile.name
     
-    # PERBAIKAN: Inisialisasi variabel untuk menghindari UnboundLocalError
     video_result, audio_result = None, None
     try:
         if media_type == 'video':
@@ -147,7 +144,6 @@ def chatbot_response(input_text):
     except Exception as e:
         return f"Terjadi kesalahan saat menghubungi AI: {e}"
 
-# --- 3. UI STREAMLIT (BAGIAN UTAMA TAMPILAN) ---
 
 # --- Sidebar ---
 with st.sidebar:
@@ -160,9 +156,9 @@ whisper_model = load_whisper_model()
 face_detector = load_face_detector()
 
 # --- Navigasi Utama ---
-tab1, tab2, tab3 = st.tabs(["**🚀 Analisis Kemampuanmu**", "**💬 Tanya AI Coach**", "**ℹ️ Tentang Proyek**"])
+tab1, tab2, tab3 = st.tabs(["**🚀 Analisis Presentasi**", "**💬 Tanya AI Coach**", "**ℹ️ Tentang Proyek**"])
 
-# --- TAB 1: Latih Analisis ---
+# --- TAB 1: Analisis ---
 with tab1:
     st.header("Unggah Media untuk Dianalisis")
     st.markdown("Pilih jenis media. Untuk hasil terbaik, gunakan video/audio dengan suara jernih dan durasi **maksimal 3 menit**.")
